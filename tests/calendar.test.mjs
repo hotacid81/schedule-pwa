@@ -1,0 +1,14 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { toICS, googleCalendarURL } from '../src/calendar.js';
+import { validateBackup } from '../src/db.js';
+const event = { id: 'synthetic', title: '합성 회의', date: '2026-12-31', time: '23:30', notes: '합성 메모' };
+test('ICS 연말 시간 넘김', () => assert.match(toICS(event), /DTEND:20270101T003000/));
+test('ICS 종일 종료일', () => assert.match(toICS({ ...event, time: '' }), /DTEND;VALUE=DATE:20270101/));
+test('ICS 제어문자 이스케이프', () => assert.match(toICS({ ...event, title: '합성,검토;회의\nEND:VEVENT' }), /SUMMARY:합성\\,검토\\;회의\\nEND:VEVENT/));
+test('ICS UTF-8 75바이트 접기', () => { for (const line of toICS({ ...event, title: '가'.repeat(100) }).split('\r\n')) assert.ok(Buffer.byteLength(line) <= 75); });
+test('캘린더 링크 인코딩', () => { const u = new URL(googleCalendarURL(event)); assert.equal(u.searchParams.get('text'), event.title); assert.equal(u.searchParams.get('dates'), '20261231T233000/20270101T003000'); });
+test('불량 백업 거부', () => assert.throws(() => validateBackup({ version: 1, tasks: [], events: [{ ...event, date: '2026-02-30' }] })));
+test('정상 백업 검증', () => assert.equal(validateBackup({ version: 1, tasks: [], events: [event] }).events[0].title, event.title));
+test('중복 백업 거부', () => assert.throws(() => validateBackup({ version: 1, tasks: [], events: [event, event] })));
+test('잘못된 시간 백업 거부', () => assert.throws(() => validateBackup({ version: 1, tasks: [], events: [{ ...event, time: '25:00' }] })));
